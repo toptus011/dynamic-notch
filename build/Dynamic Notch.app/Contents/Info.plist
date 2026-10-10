@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>pl.bulka.dynamicnotch</string>
+    <key>CFBundleName</key>
+    <string>Dynamic Notch</string>
+    <key>CFBundleDisplayName</key>
+    <string>Dynamic Notch</string>
+    <key>CFBundleExecutable</key>
+    <string>DynamicNotch</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.4.2</string>
+    <key>CFBundleVersion</key>
+    <string>11</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>pl</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Dynamic Notch pokazuje utwór grany w Muzyce lub Spotify i pozwala sterować odtwarzaniem.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Dynamic Notch pokazuje, gdy podłączysz lub odłączysz AirPods, klawiaturę czy mysz Bluetooth.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Dynamic Notch pokazuje w rozwiniętym panelu najbliższe dzisiejsze wydarzenie.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Dynamic Notch pokazuje w rozwiniętym panelu najbliższe dzisiejsze wydarzenie.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Dynamic Notch pokazuje w panelu przypomnienia na dziś i pozwala je odhaczać.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>Dynamic Notch pokazuje w panelu przypomnienia na dziś i pozwala je odhaczać.</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 ks. Piotr Bułka</string>
+</dict>
+</plist>
