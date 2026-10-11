@@ -1,6 +1,6 @@
 // Placement.swift – gdzie na pasku menu jest wolne miejsce na wcięcie
 //
-// - ekran: tylko wbudowany ekran MacBooka (nie rzutnik ani monitor),
+// - ekran: wbudowany ekran MacBooka (nie rzutnik); przy zamkniętej klapie – monitor główny,
 // - pasek menu widoczny? (w trybie pełnoekranowym i podczas pokazu Keynote – nie),
 // - gdzie kończą się menu aktywnego programu (Dostępność, AXMenuBar),
 // - gdzie zaczynają się ikony po prawej (okna pozycji paska menu).
@@ -46,8 +46,17 @@ enum Placement {
         return nil
     }
 
+    /// Ekran dla wcięcia: wbudowany, a gdy klapa jest zamknięta (praca na samym monitorze) – główny.
+    static func notchScreen() -> (NSScreen, CGDirectDisplayID)? {
+        if let builtIn = builtInScreen() { return builtIn }
+        guard let screen = NSScreen.screens.first,
+              let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        else { return nil }
+        return (screen, CGDirectDisplayID(number.uint32Value))
+    }
+
     static func current() -> MenuBarInfo? {
-        guard let found = builtInScreen() else { return nil }
+        guard let found = notchScreen() else { return nil }
         let screen = found.0
         let id = found.1
         let reserved = screen.frame.maxY - screen.visibleFrame.maxY
@@ -152,7 +161,7 @@ enum Placement {
     }
 
     static func describe(_ info: MenuBarInfo?) -> String {
-        guard let info else { return "brak wbudowanego ekranu" }
+        guard let info else { return "brak ekranu" }
         return "ekran \(Int(info.screen.frame.width))×\(Int(info.screen.frame.height)), pasek \(Int(info.height)) pkt, "
             + "widoczny=\(info.visible), koniec menu=\(info.menusRight.map { String(Int($0)) } ?? "?"), "
             + "początek ikon=\(info.statusLeft.map { String(Int($0)) } ?? "?")"

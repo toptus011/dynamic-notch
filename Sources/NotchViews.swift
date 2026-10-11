@@ -5,6 +5,7 @@
 
 import Cocoa
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Czynności wywoływane z widoku – realizuje je kontroler okna i AppDelegate.
 struct NotchActions {
@@ -25,6 +26,9 @@ struct NotchActions {
     var completeReminder: (String) -> Void
     var openCalendar: () -> Void
     var openReminders: () -> Void
+    /// Otwiera konkretne wydarzenie w Kalendarzu / przypomnienie w Przypomnieniach
+    var openEvent: (CalendarItem) -> Void
+    var openReminder: (String) -> Void
 }
 
 // MARK: - Kształt wcięcia w stylu MacBooka
@@ -75,7 +79,9 @@ struct BlurFade: ViewModifier {
         content
             .blur(radius: active ? 6 : 0)
             .opacity(active ? 0 : 1)
-            .scaleEffect(active ? 0.92 : 1)
+            // Treść „spływa” z góry razem z rozwijającym się kształtem
+            .scaleEffect(active ? 0.96 : 1, anchor: .top)
+            .offset(y: active ? -6 : 0)
     }
 }
 
@@ -99,40 +105,62 @@ struct NotchRootView: View {
         let size = model.size(for: mode)
         let ear = model.ear
         // „Pęcznienie” pod kursorem tylko w małych stanach
-        let swell = model.hovering && mode != .expanded && mode != .alert && !reduceMotion
+        let swell = model.hovering && mode != .expanded && mode != .alert && mode != .drop && !reduceMotion
+
+        let large = mode == .expanded || mode == .alert || mode == .drop
 
         ZStack(alignment: .top) {
+            // Tło z cieniem (cień rośnie razem z kształtem – nie jest przycinany)
             background(mode: mode, size: size, ear: ear)
+                .shadow(color: Color.black.opacity(large || model.dropped ? 0.4 : 0),
+                        radius: large ? 18 : 8, x: 0, y: large ? 8 : 3)
+            // Treść przycięta do kształtu: przy rozwijaniu odsłania się od góry do dołu
+            // razem z rosnącym kształtem.
             content(mode: mode)
                 .id(mode)
                 .transition(reduceMotion ? .opacity : .blurFade)
                 .frame(width: size.width, height: size.height, alignment: .top)
-                .clipped()
+                .frame(width: size.width + 2 * ear, height: size.height, alignment: .top)
+                .clipShape(clipShape(mode: mode, size: size, ear: ear))
         }
         .frame(width: size.width + 2 * ear, height: size.height, alignment: .top)
         .scaleEffect(swell ? 1.04 : 1, anchor: .top)
         .contentShape(Rectangle())
-        .onHover { actions.hover($0) }
+        // Przeciągnięcie pliku nad wcięcie: odłożenie na półkę albo AirDrop
+        .onDrop(of: [UTType.fileURL], delegate: NotchDropDelegate(model: model))
+        // Najechanie kursorem wykrywa kontroler okna (okno przepuszcza kliknięcia poza wcięciem).
         .onTapGesture { if mode != .expanded { actions.toggle() } }
         .contextMenu {
-            Button("Ustawienia…") { actions.settings() }
-            Button("Pokaż dziennik zdarzeń") { actions.log() }
+            Button(tr("Ustawienia…", "Settings…")) { actions.settings() }
+            Button(tr("Pokaż dziennik zdarzeń", "Show event log")) { actions.log() }
             Divider()
-            Button("Zakończ Dynamic Notch") { actions.quit() }
+            Button(tr("Zakończ Dynamic Notch", "Quit Dynamic Notch")) { actions.quit() }
         }
+        .offset(x: model.shapeOffset.width, y: model.shapeOffset.height)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.8),
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.85),
                    value: mode)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: size)
+        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: model.shapeOffset)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: swell)
         .animation(.easeInOut(duration: 0.2), value: model.dropped)
         .environment(\.colorScheme, .dark)
+    }
+
+    /// Kształt przycięcia – ten sam co tło (płaska góra przy pasku menu, zaokrąglony dół).
+    private func clipShape(mode: NotchMode, size: CGSize, ear: CGFloat) -> AnyShape {
+        let large = mode == .expanded || mode == .alert || mode == .drop
+        if model.dropped {
+            return AnyShape(RoundedRectangle(cornerRadius: large ? 16 : size.height / 2, style: .continuous))
+        }
+        return AnyShape(NotchShape(bottomRadius: large ? 16 : 8, ear: large ? 0 : ear))
     }
 
     /// macOS 27: mniej zaokrąglone narożniki (16 pkt) dla karty i panelu, Liquid Glass.
     /// Małe wcięcie zostaje czarne – jak sprzętowe wcięcie MacBooka.
     @ViewBuilder
     private func background(mode: NotchMode, size: CGSize, ear: CGFloat) -> some View {
-        let large = mode == .expanded || mode == .alert
+        let large = mode == .expanded || mode == .alert || mode == .drop
         if model.dropped {
             let shape = RoundedRectangle(cornerRadius: large ? 16 : size.height / 2, style: .continuous)
             if large {
@@ -159,24 +187,32 @@ struct NotchRootView: View {
     private func content(mode: NotchMode) -> some View {
         switch mode {
         case .idle:
-            Color.clear.accessibilityLabel("Dynamic Notch")
+            ZStack {
+                Color.clear
+                if model.screenRecording {
+                    // Nagrywanie ekranu – mała czerwona kropka, jak wskaźnik w iPhonie
+                    Circle().fill(Color.red).frame(width: 6, height: 6)
+                        .accessibilityLabel(tr("Trwa nagrywanie ekranu", "Screen recording in progress"))
+                }
+            }
+            .frame(height: model.barHeight)
+            .accessibilityLabel("Dynamic Notch")
+        case .timer:
+            TimerRow(model: model, secondaryDot: model.showsSecondaryDot, height: model.barHeight)
+        case .drop:
+            DropCard(model: model, topInset: model.dropped ? 0 : model.barHeight * 0.35)
         case .alert:
             if let alert = model.alert {
                 AlertCard(alert: alert, topInset: model.dropped ? 0 : model.barHeight * 0.35,
-                          openURL: actions.openURL)
+                          openURL: actions.openURL,
+                          addToShelf: { url in
+                              model.addToShelf([url])
+                              model.alert = nil
+                          })
             }
         case .activity:
             if let activity = model.activity {
                 ActivityRow(activity: activity, secondaryDot: model.showsSecondaryDot, height: model.barHeight)
-            }
-        case .event:
-            if let event = model.upcomingEvent {
-                EventRow(event: event, now: model.clock, secondaryDot: model.showsSecondaryDot,
-                         height: model.barHeight)
-            }
-        case .agenda:
-            if let event = model.nextEvent {
-                AgendaRow(event: event, now: model.clock, height: model.barHeight)
             }
         case .music:
             if let np = model.nowPlaying {
@@ -191,8 +227,8 @@ struct NotchRootView: View {
 // MARK: - Wspólne elementy
 
 private let secondaryText = Color(white: 0.62)
-
-private func percent(_ value: Float) -> String { "\(Int((value * 100).rounded()))" }
+/// Kolor akcentu wybrany w Ustawieniach systemowych → Wygląd
+var systemAccent: Color { Color(nsColor: .controlAccentColor) }
 
 func batterySymbol(_ level: Int, onAC: Bool) -> String {
     if onAC { return "battery.100.bolt" }
@@ -223,7 +259,7 @@ private func hourText(_ date: Date) -> String {
 
 private let weekdayFormatter: DateFormatter = {
     let f = DateFormatter()
-    f.locale = Locale(identifier: "pl_PL")
+    f.locale = Lang.locale
     f.dateFormat = "EEE"
     return f
 }()
@@ -233,10 +269,10 @@ func dayTimeText(_ date: Date, now: Date) -> String {
     let calendar = Calendar.current
     let day: String
     if calendar.isDate(date, inSameDayAs: now) {
-        day = "dziś"
+        day = tr("dziś", "today")
     } else if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
               calendar.isDate(date, inSameDayAs: tomorrow) {
-        day = "jutro"
+        day = tr("jutro", "tomorrow")
     } else {
         day = weekdayFormatter.string(from: date)
     }
@@ -276,21 +312,6 @@ struct TileBackground: View {
     }
 }
 
-/// Pasek poziomu (głośność, jasność).
-struct LevelBar: View {
-    var value: Double
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color(white: 0.25))
-                Capsule().fill(Color.white)
-                    .frame(width: max(0, min(1, value)) * geo.size.width)
-            }
-        }
-        .frame(height: 4)
-    }
-}
-
 /// Pasek postępu utworu – kliknięcie lub przeciągnięcie przewija utwór.
 struct ScrubBar: View {
     var progress: Double
@@ -311,8 +332,8 @@ struct ScrubBar: View {
             })
         }
         .frame(height: 12)
-        .accessibilityLabel("Postęp utworu")
-        .accessibilityValue("\(Int(progress * 100)) procent")
+        .accessibilityLabel(tr("Postęp utworu", "Track position"))
+        .accessibilityValue(tr("\(Int(progress * 100)) procent", "\(Int(progress * 100)) percent"))
     }
 }
 
@@ -378,7 +399,7 @@ struct Artwork: View {
 private struct SecondaryDot: View {
     var body: some View {
         Circle().fill(Color.green).frame(width: 6, height: 6)
-            .accessibilityLabel("Muzyka gra")
+            .accessibilityLabel(tr("Muzyka gra", "Music playing"))
     }
 }
 
@@ -406,66 +427,15 @@ struct ActivityRow: View {
         case let .power(level, _, onAC):
             Image(systemName: onAC ? "bolt.fill" : batterySymbol(level, onAC: false))
                 .foregroundColor(onAC ? .green : .white).frame(width: 18)
-            Text(onAC ? "Ładowanie" : "Na baterii")
+            Text(onAC ? tr("Ładowanie", "Charging") : tr("Na baterii", "On battery"))
             Spacer(minLength: 4)
             Text("\(level)%").foregroundColor(onAC ? .green : .white)
-        }
-    }
-}
-
-/// Zbliżające się wydarzenie: „za 12 min” albo „teraz”.
-struct EventRow: View {
-    let event: CalendarItem
-    let now: Date
-    let secondaryDot: Bool
-    let height: CGFloat
-
-    private var whenText: String {
-        let seconds = event.start.timeIntervalSince(now)
-        if seconds <= 60 { return "teraz" }
-        return "za \(Int((seconds / 60).rounded(.up))) min"
-    }
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "calendar").symbolRenderingMode(.hierarchical)
-                .foregroundColor(Color(event.color)).frame(width: 18)
-            Text(event.title).lineLimit(1).truncationMode(.tail)
+        case let .copied(symbol, preview):
+            Image(systemName: symbol).foregroundColor(systemAccent).frame(width: 18)
+            Text(tr("Skopiowano", "Copied"))
             Spacer(minLength: 4)
-            Text(whenText).foregroundColor(.orange)
-            if secondaryDot { SecondaryDot() }
+            Text(preview).foregroundColor(secondaryText).lineLimit(1).truncationMode(.tail)
         }
-        .font(.system(size: 12, weight: .medium).monospacedDigit())
-        .foregroundColor(.white)
-        .padding(.horizontal, 12)
-        .frame(height: height)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(event.title), \(whenText)")
-    }
-}
-
-/// Najbliższe wydarzenie z najbliższych 7 dni – widoczne, gdy nic nie gra.
-struct AgendaRow: View {
-    let event: CalendarItem
-    let now: Date
-    let height: CGFloat
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "calendar")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundColor(Color(event.color)).frame(width: 18)
-            Text(event.title).lineLimit(1).truncationMode(.tail)
-            Spacer(minLength: 4)
-            Text(dayTimeText(event.start, now: now))
-                .foregroundColor(secondaryText)
-        }
-        .font(.system(size: 12, weight: .medium).monospacedDigit())
-        .foregroundColor(.white)
-        .padding(.horizontal, 12)
-        .frame(height: height)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Najbliższe: \(event.title), \(dayTimeText(event.start, now: now))")
     }
 }
 
@@ -478,7 +448,7 @@ struct MusicRow: View {
         HStack(spacing: 7) {
             Artwork(image: nowPlaying.artwork, size: 16)
                 .onTapGesture { openPlayer() }
-                .help("Otwórz \(nowPlaying.player.displayName)")
+                .help(tr("Otwórz", "Open") + " \(nowPlaying.player.displayName)")
             Text(nowPlaying.title).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 4)
             Waveform(active: nowPlaying.playing, tint: nowPlaying.tint.map { Color($0) } ?? .green)
@@ -488,7 +458,7 @@ struct MusicRow: View {
         .padding(.horizontal, 10)
         .frame(height: height)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Odtwarzanie: \(nowPlaying.title), \(nowPlaying.artist)")
+        .accessibilityLabel(tr("Odtwarzanie", "Playing") + ": \(nowPlaying.title), \(nowPlaying.artist)")
     }
 }
 
@@ -499,16 +469,31 @@ struct AlertCard: View {
     let alert: NotchAlert
     let topInset: CGFloat
     var openURL: (URL) -> Void = { _ in }
+    var addToShelf: (URL) -> Void = { _ in }
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(Color(alert.tint).opacity(0.22))
-                Image(systemName: alert.symbol)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(Color(alert.tint))
+            if let image = alert.image, let url = alert.fileURL {
+                // Miniatura zrzutu: kliknięcie otwiera, przeciągnięcie wstawia do dokumentu
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 60, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+                    .onTapGesture { ShelfTools.open(url) }
+                    .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
+                    .help(tr("Kliknij, aby otworzyć · przeciągnij do dokumentu", "Click to open · drag into a document"))
+            } else {
+                ZStack {
+                    Circle().fill(Color(alert.tint).opacity(0.22))
+                    Image(systemName: alert.symbol)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Color(alert.tint))
+                }
+                .frame(width: 40, height: 40)
             }
-            .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(alert.title)
@@ -521,13 +506,13 @@ struct AlertCard: View {
             }
             Spacer(minLength: 6)
             if let title = alert.actionTitle, let url = alert.actionURL {
-                Button(action: { openURL(url) }) {
+                Button(action: { alert.shelfAction ? addToShelf(url) : openURL(url) }) {
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
-                        .background(Capsule().fill(Color.blue))
+                        .background(Capsule().fill(systemAccent))
                 }
                 .buttonStyle(.plain)
             } else if !alert.badge.isEmpty {
@@ -550,18 +535,28 @@ struct ExpandedPanel: View {
     @ObservedObject var model: NotchModel
     let actions: NotchActions
 
+    /// Zakładki – skróty ⌘1…⌘4
+    static let tabTitles = [tr("Teraz", "Now"), tr("Tydzień", "Week"), tr("Narzędzia", "Tools"), tr("Półka", "Shelf")]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             tabs
-            if model.panelTab == 0 {
+            switch model.panelTab {
+            case 0:
                 HStack(alignment: .top, spacing: 18) {
                     player.frame(width: 230, alignment: .leading)
                     controls
                 }
                 .transition(.opacity)
-            } else {
+            case 1:
                 TodayView(model: model, actions: actions)
+                    .transition(.opacity)
+            case 2:
+                ToolsView(model: model)
+                    .transition(.opacity)
+            default:
+                ShelfView(model: model, actions: actions)
                     .transition(.opacity)
             }
         }
@@ -582,7 +577,7 @@ struct ExpandedPanel: View {
                 Image(systemName: "chevron.up").frame(width: 24, height: 20).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Zwiń")
+            .accessibilityLabel(tr("Zwiń", "Close"))
         }
         .font(.system(size: 11, weight: .medium))
         .foregroundColor(secondaryText)
@@ -592,7 +587,7 @@ struct ExpandedPanel: View {
     private var tabs: some View {
         HStack(spacing: 4) {
             Spacer()
-            ForEach(Array(["Teraz", "Tydzień"].enumerated()), id: \.offset) { index, title in
+            ForEach(Array(Self.tabTitles.enumerated()), id: \.offset) { index, title in
                 Button(action: { model.panelTab = index }) {
                     Text(title)
                         .font(.system(size: 11, weight: .medium))
@@ -602,6 +597,7 @@ struct ExpandedPanel: View {
                         .background(Capsule().fill(model.panelTab == index ? Color(white: 0.2) : Color.clear))
                 }
                 .buttonStyle(.plain)
+                .help("\(title) (⌘\(index + 1))")
                 .accessibilityAddTraits(model.panelTab == index ? .isSelected : [])
             }
             Spacer()
@@ -614,9 +610,9 @@ struct ExpandedPanel: View {
                 HStack(spacing: 12) {
                     Artwork(image: np.artwork, size: 52)
                         .onTapGesture { actions.openPlayer() }
-                        .help("Otwórz \(np.player.displayName)")
+                        .help(tr("Otwórz", "Open") + " \(np.player.displayName)")
                         .accessibilityAddTraits(.isButton)
-                        .accessibilityHint("Otwiera odtwarzacz")
+                        .accessibilityHint(tr("Otwiera odtwarzacz", "Opens the player"))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(np.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                         Text(np.artist).font(.system(size: 11)).foregroundColor(secondaryText).lineLimit(1)
@@ -641,10 +637,10 @@ struct ExpandedPanel: View {
                     }
                 }
                 HStack(spacing: 22) {
-                    controlButton("backward.fill", label: "Poprzedni utwór", action: actions.previous)
+                    controlButton("backward.fill", label: tr("Poprzedni utwór", "Previous track"), action: actions.previous)
                     controlButton(np.playing ? "pause.fill" : "play.fill",
-                                  label: np.playing ? "Pauza" : "Odtwarzaj", action: actions.playPause, size: 20)
-                    controlButton("forward.fill", label: "Następny utwór", action: actions.next)
+                                  label: np.playing ? tr("Pauza", "Pause") : tr("Odtwarzaj", "Play"), action: actions.playPause, size: 20)
+                    controlButton("forward.fill", label: tr("Następny utwór", "Next track"), action: actions.next)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -655,9 +651,9 @@ struct ExpandedPanel: View {
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 Image(systemName: "music.note").font(.system(size: 22)).foregroundColor(secondaryText)
-                Text("Nic nie jest odtwarzane").font(.system(size: 12, weight: .medium))
+                Text(tr("Nic nie jest odtwarzane", "Nothing playing")).font(.system(size: 12, weight: .medium))
                 Button(action: actions.openPlayer) {
-                    Text("Otwórz Muzykę").font(.system(size: 11)).foregroundColor(.blue)
+                    Text(tr("Otwórz Muzykę", "Open Music")).font(.system(size: 11)).foregroundColor(systemAccent)
                 }
                 .buttonStyle(.plain)
             }
@@ -679,25 +675,78 @@ struct ExpandedPanel: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sliderRow(symbol: volumeSymbol(model.volume, muted: model.muted), label: "Głośność",
+            sliderRow(symbol: volumeSymbol(model.volume, muted: model.muted), label: tr("Głośność", "Volume"),
                       value: Binding(get: { Double(model.volume) }, set: { actions.setVolume(Float($0)) }))
             if let brightness = model.brightness {
-                sliderRow(symbol: "sun.max.fill", label: "Jasność",
+                sliderRow(symbol: "sun.max.fill", label: tr("Jasność", "Brightness"),
                           value: Binding(get: { Double(brightness) }, set: { actions.setBrightness(Float($0)) }))
             }
-            if let device = model.devices.first(where: { $0.symbol.hasPrefix("airpods") }) ?? model.devices.first {
-                tile(symbol: device.symbol, title: device.name, value: "")
-            }
+            devicesSection
             if model.micInUse || model.cameraInUse {
                 tile(symbol: model.cameraInUse ? "video.fill" : "mic.fill",
-                     title: model.cameraInUse ? "Kamera w użyciu" : "Mikrofon w użyciu", value: "")
+                     title: model.cameraInUse ? tr("Kamera w użyciu", "Camera in use") : tr("Mikrofon w użyciu", "Microphone in use"), value: "")
             }
             if let event = model.nextEvent {
                 tile(symbol: "calendar", title: event.title, value: dayTimeText(event.start, now: model.clock))
                     .contentShape(Rectangle())
-                    .onTapGesture { actions.openCalendar() }
-                    .help("Otwórz Kalendarz")
+                    .onTapGesture { actions.openEvent(event) }
+                    .help(tr("Otwórz w Kalendarzu", "Open in Calendar"))
             }
+        }
+    }
+
+    /// Połączone urządzenia: zwinięte – jedno (najważniejsze) i liczba; rozwinięte – pełna lista.
+    @ViewBuilder private var devicesSection: some View {
+        let all = model.allDevices
+        if let first = all.first(where: { $0.symbol.hasPrefix("airpods") }) ?? all.first {
+            VStack(spacing: 3) {
+                Button(action: { model.devicesListOpen.toggle() }) {
+                    HStack(spacing: 7) {
+                        Image(systemName: model.devicesListOpen ? "cable.connector.horizontal" : first.symbol)
+                            .font(.system(size: 12)).frame(width: 18)
+                        Text(model.devicesListOpen ? tr("Połączone urządzenia", "Connected devices") : first.name)
+                            .lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 4)
+                        Text("\(all.count)").monospacedDigit().foregroundColor(secondaryText)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(secondaryText)
+                            .rotationEffect(.degrees(model.devicesListOpen ? 180 : 0))
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .padding(.horizontal, 9)
+                    .frame(height: 26)
+                    .background(TileBackground())
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(model.devicesListOpen ? tr("Zwiń listę", "Collapse list") : tr("Pokaż wszystkie połączone urządzenia", "Show all connected devices"))
+                .accessibilityLabel(tr("Połączone urządzenia", "Connected devices") + ": \(all.count)")
+
+                if model.devicesListOpen {
+                    VStack(spacing: 2) {
+                        ForEach(all.prefix(6)) { device in
+                            HStack(spacing: 7) {
+                                Image(systemName: device.symbol).font(.system(size: 11)).frame(width: 18)
+                                Text(device.name).lineLimit(1).truncationMode(.tail)
+                                Spacer(minLength: 4)
+                                Text(device.kind).font(.system(size: 9, weight: .medium))
+                                    .foregroundColor(secondaryText)
+                            }
+                            .font(.system(size: 11))
+                            .padding(.horizontal, 9)
+                            .frame(height: 26)
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(0.04)))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.devicesListOpen)
+        } else {
+            tile(symbol: "cable.connector.horizontal", title: tr("Brak połączonych urządzeń", "No connected devices"), value: "")
         }
     }
 
@@ -734,9 +783,9 @@ struct TodayView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                sectionHeader("Najbliższe 7 dni", app: "Kalendarz", action: actions.openCalendar)
+                sectionHeader(tr("Najbliższe 7 dni", "Next 7 days"), app: tr("Kalendarz", "Calendar"), action: actions.openCalendar)
                 if model.todayEvents.isEmpty {
-                    emptyTile("Brak wydarzeń w tym tygodniu")
+                    emptyTile(tr("Brak wydarzeń w tym tygodniu", "No events this week"))
                         .onTapGesture { actions.openCalendar() }
                 } else {
                     ForEach(model.todayEvents.prefix(5)) { event in
@@ -747,9 +796,9 @@ struct TodayView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 6) {
-                sectionHeader("Przypomnienia", app: "Przypomnienia", action: actions.openReminders)
+                sectionHeader(tr("Przypomnienia", "Reminders"), app: tr("Przypomnienia", "Reminders"), action: actions.openReminders)
                 if model.reminders.isEmpty {
-                    emptyTile("Wszystko zrobione")
+                    emptyTile(tr("Wszystko zrobione", "All done"))
                         .onTapGesture { actions.openReminders() }
                 } else {
                     ForEach(model.reminders.prefix(4)) { reminder in
@@ -773,11 +822,11 @@ struct TodayView: View {
             Spacer(minLength: 4)
             if let url = event.meetingURL {
                 Button(action: { actions.openURL(url) }) {
-                    Text("Dołącz")
+                    Text(tr("Dołącz", "Join"))
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(Color.blue))
+                        .background(Capsule().fill(systemAccent))
                 }
                 .buttonStyle(.plain)
             }
@@ -786,8 +835,8 @@ struct TodayView: View {
         .frame(height: 34)
         .background(TileBackground())
         .contentShape(Rectangle())
-        .onTapGesture { actions.openCalendar() }
-        .help("Otwórz w Kalendarzu")
+        .onTapGesture { actions.openEvent(event) }
+        .help(tr("Otwórz w Kalendarzu", "Open in Calendar"))
         .accessibilityElement(children: .combine)
     }
 
@@ -801,7 +850,7 @@ struct TodayView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Odhacz: \(reminder.title)")
+            .accessibilityLabel(tr("Odhacz", "Complete") + ": \(reminder.title)")
             Text(reminder.title).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
         }
@@ -809,8 +858,8 @@ struct TodayView: View {
         .frame(height: 30)
         .background(TileBackground())
         .contentShape(Rectangle())
-        .onTapGesture { actions.openReminders() }
-        .help("Otwórz w Przypomnieniach")
+        .onTapGesture { actions.openReminder(reminder.id) }
+        .help(tr("Otwórz w Przypomnieniach", "Open in Reminders"))
     }
 
     private func emptyTile(_ text: String) -> some View {
@@ -834,7 +883,7 @@ struct TodayView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Otwórz \(app)")
-        .accessibilityLabel("\(title) – otwórz \(app)")
+        .help(tr("Otwórz", "Open") + " \(app)")
+        .accessibilityLabel("\(title) – " + tr("otwórz", "open") + " \(app)")
     }
 }

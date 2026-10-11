@@ -1,0 +1,10 @@
+/* Dynamic Notch – English permission texts */
+"NSAppleEventsUsageDescription" = "Dynamic Notch shows the song playing in Music or Spotify and lets you control playback.";
+"NSBluetoothAlwaysUsageDescription" = "Dynamic Notch shows when AirPods, keyboards or mice connect and lists connected devices in the panel.";
+"NSCalendarsFullAccessUsageDescription" = "Dynamic Notch announces Calendar events (15 minutes before and at start) and shows the next 7 days in the panel.";
+"NSCalendarsUsageDescription" = "Dynamic Notch announces Calendar events (15 minutes before and at start) and shows the next 7 days in the panel.";
+"NSRemindersFullAccessUsageDescription" = "Dynamic Notch shows today’s reminders in the panel and lets you complete them.";
+"NSRemindersUsageDescription" = "Dynamic Notch shows today’s reminders in the panel and lets you complete them.";
+"NSDesktopFolderUsageDescription" = "Dynamic Notch shows a thumbnail of a fresh screenshot and files you put on the shelf.";
+"NSDocumentsFolderUsageDescription" = "Dynamic Notch shows files you put on the shelf.";
+"NSDownloadsFolderUsageDescription" = "Dynamic Notch shows files you put on the shelf.";

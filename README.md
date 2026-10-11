@@ -2,25 +2,43 @@
 
 Opracował ks. Piotr Bułka
 
-Małe czarne wcięcie na środku paska menu, w stylu MacBooka (wersja 1.4.2).
+Małe czarne wcięcie na środku paska menu, w stylu MacBooka (wersja 1.7.1).
 Wcięcie pokazuje to, czego macOS sam nie pokazuje: co działa w tle i co jest podłączone.
 Głośność i jasność pokazuje sam system – wcięcie ich nie powiela.
 
 **We wcięciu:**
 - grana muzyka (Muzyka, Spotify) – ma pierwszeństwo: okładka, tytuł, korektor w barwach okładki;
   kliknięcie okładki otwiera odtwarzacz,
-- gdy nic nie gra – najbliższe wydarzenie z Kalendarza z **najbliższych 7 dni** („jutro 9:00”, „pt 18:30”),
-- 15 min przed wydarzeniem i w chwili rozpoczęcia – duża karta (z przyciskiem **„Dołącz”**, gdy jest
-  link do Zoom, Meet, Teams lub FaceTime), pomiędzy – odliczanie „za 12 min”,
+- wydarzenie z Kalendarza – tylko na chwilę (8 s): 15 min przed i w chwili rozpoczęcia pojawia się
+  karta (z przyciskiem **„Dołącz”**, gdy jest link do Zoom, Meet, Teams lub FaceTime) i znika;
+  wcięcie nie wyświetla wydarzeń na stałe,
 - włączenie kamery lub mikrofonu – tylko krótka informacja (ok. 3 s), muzyka zostaje na wierzchu,
 - podłączenie AirPods i innych urządzeń Bluetooth – duża karta,
 - bateria – ostrzeżenia przy 20% i 10%, komunikat „Naładowano”, podłączenie zasilacza.
 
-**Panel (kliknięcie wcięcia lub ⌃⌥Spacja)** – dwie zakładki:
+**Na co dzień i praca (nowość w 1.5):**
+- **Minutnik i stoper** – w panelu, zakładka „Narzędzia”; w trakcie odliczania wcięcie pokazuje czas,
+  a na koniec karta i dźwięk,
+- **Półka na pliki** – przeciągnij plik na wcięcie: lewa połowa karty odkłada go na półkę,
+  prawa wysyła przez **AirDrop**; z półki (zakładka „Półka”) plik można przeciągnąć do dokumentu,
+  otworzyć albo wysłać,
+- **Zrzut ekranu** – po ⌘⇧3 / ⌘⇧4 na chwilę miniatura: kliknięcie otwiera, przeciągnięcie wstawia
+  do dokumentu, „Na półkę” odkłada,
+- **„Skopiowano”** – krótki znak przy ⌘C i lista ostatnio skopiowanych tekstów w zakładce „Półka”
+  (kliknięcie kopiuje ponownie; historia tylko w pamięci, hasła są pomijane),
+- **Skupienie** – krótka informacja przy włączeniu i wyłączeniu trybu Skupienia,
+- **Nagrywanie ekranu, rzutnik, AirPlay** – informacja przy rozpoczęciu nagrywania (i czerwona kropka
+  we wcięciu w trakcie) oraz przy podłączeniu ekranu.
+
+**Panel (kliknięcie wcięcia lub ⌃⌥Spacja)** – cztery zakładki:
 - **Teraz:** odtwarzacz w barwach okładki z przewijanym paskiem postępu, suwaki głośności
-  i jasności (do szybkiej zmiany), urządzenie, najbliższe wydarzenie,
+  i jasności (do szybkiej zmiany), **rozwijana lista wszystkich połączonych urządzeń**
+  (Bluetooth, USB, ekrany i AirPlay), najbliższe wydarzenie,
 - **Tydzień:** wydarzenia z najbliższych 7 dni (z „Dołącz”) i przypomnienia na dziś do odhaczenia.
-  Kliknięcie nagłówka **Kalendarz** lub **Przypomnienia** (albo pozycji) otwiera właściwą aplikację.
+  Kliknięcie nagłówka **Kalendarz** lub **Przypomnienia** (albo pozycji) otwiera właściwą aplikację,
+- **Narzędzia:** po lewej minutnik (1–60 min, +1 min) i stoper, po prawej lista **„Do zrobienia”**
+  (wpisz i naciśnij Enter; kółko odhacza, × usuwa; lista zostaje po ponownym uruchomieniu),
+- **Półka:** odłożone pliki i ostatnio skopiowane teksty.
 
 **Wygląd jak w macOS 27:** głęboka czerń jak sprzętowe wcięcie, delikatny refleks światła na dolnej
 krawędzi, jednolite, łagodniejsze zaokrąglenia – bez ramek.
@@ -45,12 +63,14 @@ Wstrzymuje odświeżanie przy uśpionym ekranie (oszczędza baterię).
    - **Przypomnienia** – lista na dziś w panelu,
    - **Bluetooth** – żeby pokazywać podłączane urządzenia,
    - **sterowanie Muzyką / Spotify** – okładka i przyciski odtwarzacza,
-   - **Kalendarz** – przy pierwszym rozwinięciu panelu.
+   - **Kalendarz** – przy pierwszym rozwinięciu panelu,
+   - **Biurko** – przy pierwszym zrzucie ekranu (miniatura zrzutu).
 
 ## Obsługa
 
 - **Kliknięcie** wcięcia – rozwija panel. Odsunięcie kursora lub kliknięcie obok – zwija.
-- **⌃⌥Spacja** – rozwiń / zwiń z klawiatury.
+- **⌃⌥Spacja** – rozwiń / zwiń z klawiatury (skrót można zmienić w Ustawieniach).
+- **Esc** – zwiń panel, **⌘1–⌘4** – zakładki panelu.
 - **Prawy przycisk** na wcięciu – Ustawienia, dziennik zdarzeń, zakończenie programu.
 - **Ponowne uruchomienie** Dynamic Notch z Launchpada otwiera Ustawienia.
 
@@ -85,6 +105,52 @@ i włączyć uruchamianie przy logowaniu. Głośność i jasność pokazuje sam 
 
 - 1.4.2: na zwykłym biurku wcięcie jest widoczne zawsze (chowa się tylko w trybie pełnoekranowym,
   razem z paskiem menu); naprawione otwieranie okna Ustawień.
+
+- 1.4.3: po wyjściu programu z pełnego ekranu wcięcie wraca od razu (wcześniej potrafiło zniknąć).
+
+- 1.4.4: w pełnym ekranie wcięcie samo mierzy, po jakim czasie macOS chowa pasek menu, i chowa się razem z nim.
+
+- 1.4.5: wydarzenia nie wiszą już stale we wcięciu – pokazują się tylko na chwilę o właściwej porze.
+
+## Wersja 1.5 – co nowego
+
+Minutnik i stoper, półka na pliki z AirDrop, miniatura zrzutu ekranu, „Skopiowano” z historią
+schowka, informacja o Skupieniu, nagrywaniu ekranu i podłączeniu rzutnika / AirPlay.
+Każdą z tych funkcji można wyłączyć w Ustawieniach („Na co dzień i praca”).
+
+## Wersja 1.6 – co nowego
+
+- Rozwijana lista wszystkich połączonych urządzeń w zakładce „Teraz”.
+- Lista „Do zrobienia” w „Narzędziach”; minutnik i stoper razem po lewej stronie.
+- Poprawiona animacja: panel rozwija się płynnie od góry do dołu, treść odsłania się razem z kształtem.
+
+## Wersja 1.7 – pełniejsza integracja z macOS
+
+- **Skupienie:** gdy jest włączone, wcięcie pokazuje tylko ważne powiadomienia (spotkania, minutnik,
+  bateria, kamera i mikrofon); „Skopiowano”, urządzenia czy zrzuty ekranu czekają.
+- **Centrum powiadomień:** koniec minutnika i początek spotkania trafiają też do Centrum powiadomień –
+  ale tylko wtedy, gdy od minuty nie używasz Maca lub ekran śpi (bez podwójnych komunikatów).
+- **Kolor akcentu** z Ustawień systemowych (przyciski, podświetlenia).
+- **Konkretne wydarzenie i przypomnienie:** kliknięcie otwiera właśnie je w Kalendarzu / Przypomnieniach.
+- **Klawiatura:** Esc – zwiń panel, ⌘1–⌘4 – zakładki, ⌘W – zamknij; własny skrót do rozwijania
+  (Ustawienia → Ogólne → Skrót klawiszowy); działa ⌘C / ⌘V w polu zadań.
+- **Ustawienia w stylu Apple:** zakładki Ogólne, Wcięcie, Narzędzia.
+- **Prywatność schowka:** w tle wcięcie wie tylko, ŻE coś skopiowano – treść czyta wyłącznie przy włączonej
+  „Historii schowka” (domyślnie wyłączona; historię ma też Spotlight w macOS 26).
+- **Zamknięta klapa:** przy pracy na samym monitorze wcięcie pojawia się na monitorze głównym.
+- **Bateria:** w trybie niskiego zużycia energii wszystko jest sprawdzane rzadziej.
+- **Aktualizacje:** raz dziennie sprawdza GitHub i na chwilę pokazuje „Dostępna wersja …” z przyciskiem Pobierz.
+- **Język:** interfejs po polsku, a gdy system jest w innym języku – po angielsku.
+- **Skróty (aplikacja Skróty, Siri, Touch Bar):** adresy
+  `dynamicnotch://minutnik?min=10`, `dynamicnotch://stoper`, `dynamicnotch://zadanie?tekst=Kupić chleb`,
+  `dynamicnotch://panel`, `dynamicnotch://ustawienia` (w Skrótach: akcja „Otwórz adresy URL”).
+- Porządki w kodzie: usunięte pozostałości po wskaźnikach głośności/jasności i starych widokach.
+
+## Wersja 1.7.1
+
+- Nowa animacja rozwijania: okno wcięcia ma stały rozmiar, a kształt rośnie płynnie od góry do dołu
+  (bez przeskoków i spóźnionego powiększania okna); cień rośnie razem z panelem.
+- Poza kształtem wcięcia kliknięcia przechodzą do paska menu i programów.
 
 ## Gdy coś nie działa
 

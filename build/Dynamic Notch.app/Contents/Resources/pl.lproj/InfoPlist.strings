@@ -1,0 +1,2 @@
+/* Dynamic Notch – polskie opisy zgód (te same co w Info.plist) */
+"NSBluetoothAlwaysUsageDescription" = "Dynamic Notch pokazuje podłączanie AirPods, klawiatury czy myszy Bluetooth oraz listę połączonych urządzeń w panelu.";

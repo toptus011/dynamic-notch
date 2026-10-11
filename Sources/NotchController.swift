@@ -43,7 +43,7 @@ final class NotchController {
     /// Wywoływane przy uśpieniu (false) i wybudzeniu (true) ekranu.
     var onScreenAwake: ((Bool) -> Void)?
 
-    /// Margines okna wokół kształtu – miejsce na „pęcznienie” pod kursorem.
+    /// Margines wokół kształtu, w którym kursor już „jest nad wcięciem”.
     static let hoverMargin: CGFloat = 6
 
     private var info: MenuBarInfo?
@@ -52,8 +52,8 @@ final class NotchController {
     private var placementInterval: TimeInterval = 0
     private var hoverWork: DispatchWorkItem?
     private var collapseWork: DispatchWorkItem?
-    private var shrinkWork: DispatchWorkItem?
     private var outsideClickMonitor: Any?
+    private var keyMonitor: Any?
     private var lastLoggedPlacement = ""
     private var screenAsleep = false
     /// Kursor nad wcięciem – w trybie pełnoekranowym macOS chowa wtedy pasek menu,
@@ -71,7 +71,13 @@ final class NotchController {
     /// Schowaliśmy wcięcie od razu, gdy kursor zjechał z paska (system zaraz schowa pasek).
     private var predictedHide = false
     /// Pasek był naprawdę schowany (potwierdzone) – dopiero wtedy chowamy wcięcie „z wyprzedzeniem”.
-    private var sawHidden = false
+    private var predictedHideAt = Date.distantPast
+    /// Chwila, gdy kursor zjechał z paska menu (od niej liczymy czas do schowania paska).
+    private var leftBarAt: Date?
+    private var visibleFarSince: Date?
+    private var predictionFailed = false
+    private var menuOpenCheckedAt = Date.distantPast
+    private var menuOpenCached = false
     /// Kolejne sprawdzenia: pasek niewidoczny / widoczny mimo kursora daleko od góry.
     private var hiddenChecks = 0
     private var shownChecks = 0
@@ -81,7 +87,7 @@ final class NotchController {
     var actions = NotchActions(toggle: {}, collapse: {}, hover: { _ in }, playPause: {}, next: {}, previous: {},
                                setVolume: { _ in }, setBrightness: { _ in }, settings: {}, log: {}, quit: {},
                                openPlayer: {}, seek: { _ in }, openURL: { _ in }, completeReminder: { _ in },
-                               openCalendar: {}, openReminders: {})
+                               openCalendar: {}, openReminders: {}, openEvent: { _ in }, openReminder: { _ in })
 
     func start(actions custom: NotchActions) {
         actions = custom
@@ -94,6 +100,7 @@ final class NotchController {
         // Rozmiar okna ustala kontroler – widok nie może go narzucać.
         hosting.sizingOptions = []
         panel.contentView = hosting
+        startMouseTracking()
 
         // Każda zmiana stanu → nowy rozmiar i położenie okna
         model.objectWillChange
@@ -179,13 +186,48 @@ final class NotchController {
             outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
                 [weak self] _ in self?.setExpanded(false)
             }
-        } else if let monitor = outsideClickMonitor {
-            NSEvent.removeMonitor(monitor)
-            outsideClickMonitor = nil
+            // Klawiatura w panelu: Esc – zwiń, ⌘1…⌘4 – zakładki
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                self?.handleKey(event) == true ? nil : event
+            }
+        } else {
+            panel.makeFirstResponder(nil)
+            if let monitor = outsideClickMonitor {
+                NSEvent.removeMonitor(monitor)
+                outsideClickMonitor = nil
+            }
+            if let monitor = keyMonitor {
+                NSEvent.removeMonitor(monitor)
+                keyMonitor = nil
+            }
         }
     }
 
     func toggle() { setExpanded(!model.expanded) }
+
+    /// Skróty w rozwiniętym panelu. Zwraca true, gdy klawisz został obsłużony.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        guard model.expanded, event.window === panel else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.keyCode == 53 {                                   // Esc
+            if panel.firstResponder is NSText, !model.newTodoText.isEmpty {
+                model.newTodoText = ""                             // najpierw czyści pole zadania
+            } else {
+                setExpanded(false)
+            }
+            return true
+        }
+        if flags == .command, let chars = event.charactersIgnoringModifiers,
+           let digit = Int(chars), (1...4).contains(digit) {
+            model.panelTab = digit - 1
+            return true
+        }
+        if flags == .command, event.charactersIgnoringModifiers == "w" {
+            setExpanded(false)
+            return true
+        }
+        return false
+    }
 
     private func hover(_ inside: Bool) {
         mouseInside = inside
@@ -199,7 +241,8 @@ final class NotchController {
             let work = DispatchWorkItem { [weak self] in self?.setExpanded(true) }
             hoverWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
-        } else if model.expanded {
+        } else if model.expanded && !(panel.firstResponder is NSText) {
+            // Gdy wpisujesz zadanie (pole tekstowe aktywne), panel nie zwija się po odsunięciu kursora.
             let work = DispatchWorkItem { [weak self] in self?.setExpanded(false) }
             collapseWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
@@ -235,11 +278,16 @@ final class NotchController {
         }
         if !autoHideBar && hiddenChecks >= 2 {
             startSlideTracking()
-        } else if autoHideBar && shownChecks >= 2 {
+        } else if autoHideBar && shownChecks >= 3 {
             stopSlideTracking()
             Log.write("Pasek menu jest stale widoczny – wcięcie zawsze na miejscu")
         }
-        _ = systemChange
+        if systemChange {
+            // Przejście między pełnym ekranem a zwykłym oknem trwa ok. 0,7 s – sprawdzamy jeszcze raz po nim.
+            for delay in [0.35, 0.9] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.refreshPlacement() }
+            }
+        }
         // Szybsze sprawdzanie, dopóki nie wiadomo, czy pasek jest chowany.
         schedulePlacement(fast: !visible && !autoHideBar)
         layout()
@@ -253,12 +301,17 @@ final class NotchController {
         shownChecks = 0
         barShown = false
         predictedHide = false
-        sawHidden = false
+        leftBarAt = nil
+        visibleFarSince = nil
+        predictionFailed = false
         slideOffset = 0
         menuBarWindowIDs = []
         Log.write("Pasek menu chowany – wcięcie wysuwa się razem z nim")
         slideTimer?.invalidate()
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.slideTick() }
+        // 60 razy na sekundę (w trybie niskiego zużycia energii – 30)
+        let timer = Timer(timeInterval: Prefs.lowPower ? 1.0 / 30.0 : 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.slideTick()
+        }
         RunLoop.main.add(timer, forMode: .common)
         slideTimer = timer
     }
@@ -303,30 +356,67 @@ final class NotchController {
 
     private func slideTick() {
         guard let info, autoHideBar else { return }
-        // Gdy pasek schowany, a kursor daleko od góry – nic nie sprawdzamy (prawie zero pracy).
+        let now = Date()
+        // Pasek schowany, kursor daleko od góry – nic do roboty.
         guard barShown || predictedHide || mouseNearTop() else { return }
 
-        // macOS chowa pasek w chwili, gdy kursor z niego zjedzie – chowamy wcięcie w tej samej chwili,
-        // nie czekając, aż okno paska zniknie (to dawało opóźnienie).
-        if barShown && sawHidden && !pinned && !mouseInBar(info) && !menuOpen() {
+        var state = menuBarState(info)
+        let inBar = mouseInBar(info)
+
+        // Odliczanie od chwili, gdy kursor zjechał z paska (macOS chowa pasek z opóźnieniem).
+        if barShown {
+            if inBar || pinned || cachedMenuOpen(now) {
+                leftBarAt = nil
+                visibleFarSince = nil
+            } else {
+                if leftBarAt == nil { leftBarAt = now }
+                // Pasek wciąż widoczny długo po zjechaniu kursora – to już zwykły, stały pasek
+                // (np. program wyszedł z pełnego ekranu).
+                if state != nil && !mouseNearTop() {
+                    if visibleFarSince == nil { visibleFarSince = now }
+                    if now.timeIntervalSince(visibleFarSince!) > 2.5 { barBecamePermanent(); return }
+                } else {
+                    visibleFarSince = nil
+                }
+            }
+        }
+
+        // Chowamy wcięcie z wyprzedzeniem, tak aby skończyło się chować razem z paskiem.
+        // Czas chowania paska program sam mierzy (zapisany w ustawieniach) – dopasowuje się do systemu.
+        if barShown, let t0 = leftBarAt, let delay = learnedHideDelay, !predictionFailed,
+           now.timeIntervalSince(t0) >= max(0, delay - Self.slideDuration) {
             barShown = false
             predictedHide = true
+            predictedHideAt = now
             slideOffset = 0
             animateSlide(in: false)
             return
         }
 
-        var state = menuBarState(info)
-        if state == nil && !mouseInBar(info) { sawHidden = true }
         if predictedHide {
-            if state == nil || mouseInBar(info) { predictedHide = false }
-            // Pasek jeszcze się chowa – nie pokazujemy wcięcia ponownie.
-            if predictedHide { state = nil }
+            if state == nil {
+                predictedHide = false
+                learnHideDelay(now)
+            } else if inBar {
+                predictedHide = false
+                leftBarAt = nil
+            } else if now.timeIntervalSince(predictedHideAt) > 1.0 {
+                // Przewidywanie się nie sprawdziło – pasek dalej widać. Wcięcie wraca;
+                // do czasu prawdziwego schowania paska nie zgadujemy.
+                predictedHide = false
+                predictionFailed = true
+            } else {
+                state = nil   // pasek właśnie się chowa – nie pokazujemy wcięcia ponownie
+            }
+            if predictedHide { return }
         }
+
         if let offset = state {
             let newOffset = pinned ? 0 : offset
             if !barShown {
                 barShown = true
+                leftBarAt = nil
+                visibleFarSince = nil
                 slideOffset = newOffset
                 followedMotion = offset > 1
                 layout()
@@ -338,10 +428,51 @@ final class NotchController {
                 layout()
             }
         } else if barShown {
+            // Pasek schował się (zanim zdążyliśmy przewidzieć) – mierzymy, ile to trwało.
+            learnHideDelay(now)
+            predictionFailed = false
             barShown = false
             slideOffset = 0
             if !pinned { animateSlide(in: false) }
         }
+    }
+
+    static let slideDuration: TimeInterval = 0.2
+
+    /// Zmierzony czas od zjechania kursora z paska do schowania paska (średnia krocząca).
+    private var learnedHideDelay: TimeInterval? {
+        get {
+            let v = UserDefaults.standard.double(forKey: "czasChowaniaPaska")
+            return v > 0 ? v : nil
+        }
+        set { UserDefaults.standard.set(newValue ?? 0, forKey: "czasChowaniaPaska") }
+    }
+
+    private func learnHideDelay(_ now: Date) {
+        guard let t0 = leftBarAt else { return }
+        leftBarAt = nil
+        let sample = now.timeIntervalSince(t0)
+        guard sample > 0.05 && sample < 4 else { return }
+        let value = learnedHideDelay.map { $0 * 0.6 + sample * 0.4 } ?? sample
+        learnedHideDelay = value
+        Log.write(String(format: "Pasek menu chowa się po %.2f s – wcięcie dopasowane (%.2f s)", sample, value))
+    }
+
+    private func cachedMenuOpen(_ now: Date) -> Bool {
+        if now.timeIntervalSince(menuOpenCheckedAt) > 0.1 {
+            menuOpenCheckedAt = now
+            menuOpenCached = menuOpen()
+        }
+        return menuOpenCached
+    }
+
+    /// Pasek menu okazał się stale widoczny – kończymy śledzenie i od razu pokazujemy wcięcie.
+    private func barBecamePermanent() {
+        stopSlideTracking()
+        predictedHide = false
+        Log.write("Pasek menu znów stały (wyjście z pełnego ekranu) – wcięcie wraca")
+        panel.alphaValue = 1
+        refreshPlacement()
     }
 
     /// Ile punktów pasek menu jest nad ekranem; nil – pasek schowany.
@@ -387,28 +518,37 @@ final class NotchController {
         return check(all, collect: true)
     }
 
+    private var slideAnimating = false
+
     /// Wsunięcie / wysunięcie wcięcia w tym samym tempie co pasek menu (ok. 0,2 s).
+    /// Okno przesuwa się o wysokość samego kształtu (nie całego okna), więc ruch ma właściwe tempo.
     private func animateSlide(in show: Bool) {
         let target = panel.frame
-        let hidden = target.offsetBy(dx: 0, dy: target.height)
-        // Tempo paska menu macOS: ok. 0,2 s
+        let distance = model.size(for: model.mode).height + model.shapeOffset.height + 6
+        let hidden = target.offsetBy(dx: 0, dy: distance)
+        slideAnimating = true
         if show {
             panel.setFrame(hidden, display: false)
             panel.orderFrontRegardless()
-            NSAnimationContext.runAnimationGroup { ctx in
+            NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.2
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 panel.animator().setFrame(target, display: true)
-            }
+            }, completionHandler: { [weak self] in
+                self?.slideAnimating = false
+                self?.layout()
+            })
         } else {
-            guard panel.isVisible else { return }
+            guard panel.isVisible else { slideAnimating = false; return }
             NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.15
+                ctx.duration = Self.slideDuration
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 panel.animator().setFrame(hidden, display: true)
             }, completionHandler: { [weak self] in
-                guard let self, !self.barShown, !self.pinned else { return }
-                self.panel.orderOut(nil)
+                guard let self else { return }
+                self.slideAnimating = false
+                guard !self.barShown, !self.pinned else { self.layout(); return }
+                self.hidePanel()
                 self.layout()
             })
         }
@@ -416,77 +556,93 @@ final class NotchController {
 
     var placementDescription: String { Placement.describe(info) }
 
+    /// Wysokość okna: mieści największy stan (panel z rozwiniętą listą urządzeń), kapsułkę pod paskiem i cień.
+    static let windowHeight: CGFloat = 520
+
+    /// Okno ma stały rozmiar (szerokość ekranu × 520 pkt) i nie zmienia go przy rozwijaniu –
+    /// całą animację (od góry do dołu) wykonuje SwiftUI wewnątrz, płynnie i bez przeskoków.
+    /// Poza kształtem wcięcia okno przepuszcza kliknięcia do paska menu i programów.
     private func layout() {
         // Na zwykłym biurku wcięcie jest zawsze; chowa się tylko razem z chowanym paskiem menu.
         let barVisible = autoHideBar ? barShown : ((info?.visible ?? false) || hiddenChecks < 2)
         guard let info, barVisible || model.expanded || mouseInside else {
             if model.expanded { setExpanded(false) }
-            panel.orderOut(nil)
+            hidePanel()
             return
         }
         let mode = model.mode
         let size = model.size(for: mode)
         let notchWidth = size.width + 2 * model.ear
+        let screen = info.screen.frame
         let margin = Self.hoverMargin
 
-        let x: CGFloat
-        var y = info.screen.frame.maxY - size.height
+        let centerX: CGFloat
+        var offsetY: CGFloat = 0
         var dropped = false
-
         switch info.slot(width: notchWidth) {
         case .inBar(let left):
-            x = left
-            // Pasek menu właśnie się wsuwa/wysuwa – wcięcie jedzie razem z nim.
-            if autoHideBar && !pinned { y += slideOffset }
+            centerX = left + notchWidth / 2
         case .noRoom:
-            // Brak miejsca w pasku: spoczynek – nic nie pokazujemy; zdarzenia – pod paskiem.
+            // Brak miejsca w pasku: spoczynek – nic nie pokazujemy; zdarzenia – kapsułka pod paskiem.
             if mode == .idle {
-                panel.orderOut(nil)
+                hidePanel()
                 return
             }
             dropped = true
-            x = info.screen.frame.midX - size.width / 2
-            y = info.screen.frame.maxY - info.height - size.height - 6
+            centerX = screen.midX
+            offsetY = info.height + 6
         }
-        if model.dropped != dropped {
-            DispatchQueue.main.async { self.model.dropped = dropped }
-        }
-        // Cień tylko wtedy, gdy wcięcie wysuwa się nad dokumenty (pod paskiem lub rozwinięte).
-        let wantsShadow = dropped || mode == .expanded || mode == .alert
-        if panel.hasShadow != wantsShadow { panel.hasShadow = wantsShadow }
+        if model.dropped != dropped { model.dropped = dropped }
+        // Położenie kształtu w oknie – zmiana przesuwa wcięcie płynnie (animacja SwiftUI).
+        let offset = CGSize(width: (centerX - screen.midX).rounded(), height: offsetY)
+        if model.shapeOffset != offset { model.shapeOffset = offset }
 
-        // Okno jest nieco większe od kształtu (margines na „pęcznienie”), górna krawędź bez marginesu.
-        let target = NSRect(x: (x - margin).rounded(), y: (y - margin).rounded(),
-                            width: notchWidth + 2 * margin, height: size.height + margin)
-        let current = panel.frame
-
-        shrinkWork?.cancel()
-        let sameSize = abs(target.width - current.width) < 1 && abs(target.height - current.height) < 1
-        if panel.isVisible && sameSize && abs(target.minX - current.minX) >= 1 {
-            // Ta sama wielkość, inne miejsce (np. po przełączeniu na Pages) – płynne przesunięcie.
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.35
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                panel.animator().setFrame(target, display: true)
-            }
-        } else if target.width >= current.width && target.height >= current.height || !panel.isVisible {
-            // Powiększanie: od razu duże okno, kształt rośnie animacją wewnątrz.
-            panel.setFrame(target, display: true)
-        } else {
-            // Zmniejszanie: okno zostaje duże do końca animacji, potem dopasowuje się.
-            let union = NSRect(x: target.midX - max(target.width, current.width) / 2,
-                               y: min(target.minY, current.minY),
-                               width: max(target.width, current.width),
-                               height: max(target.maxY, current.maxY) - min(target.minY, current.minY))
-            panel.setFrame(union, display: true)
-            let work = DispatchWorkItem { [weak self] in
-                self?.panel.setFrame(target, display: true)
-                self?.panel.invalidateShadow()
-            }
-            shrinkWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+        let slide = (autoHideBar && !pinned) ? slideOffset : 0
+        let frame = NSRect(x: screen.minX, y: screen.maxY - Self.windowHeight + slide,
+                           width: screen.width, height: Self.windowHeight)
+        if !slideAnimating && panel.frame != frame {
+            panel.setFrame(frame, display: true)
         }
-        if wantsShadow { panel.invalidateShadow() }
+        // Obszar, w którym okno reaguje na kursor: kształt wcięcia + mały margines.
+        hitRect = NSRect(x: centerX - notchWidth / 2 - margin,
+                         y: screen.maxY - offsetY - size.height - margin + slide,
+                         width: notchWidth + 2 * margin,
+                         height: size.height + margin + 2)   // +2: kursor na samej górnej krawędzi ekranu
         if !panel.isVisible { panel.orderFrontRegardless() }
+        updateMouse()
+    }
+
+    private func hidePanel() {
+        if panel.isVisible { panel.orderOut(nil) }
+        hitRect = .zero
+        updateMouse()
+    }
+
+    // MARK: - Kursor: przepuszczanie kliknięć poza wcięciem i najechanie
+
+    private var hitRect: NSRect = .zero
+    private var mouseMonitors: [Any] = []
+
+    private func startMouseTracking() {
+        let kinds: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: kinds, handler: { [weak self] _ in
+            self?.updateMouse()
+        }) {
+            mouseMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: kinds, handler: { [weak self] event in
+            self?.updateMouse()
+            return event
+        }) {
+            mouseMonitors.append(local)
+        }
+        panel.ignoresMouseEvents = true
+    }
+
+    /// Kursor nad wcięciem → okno przyjmuje kliknięcia; poza nim → kliknięcia trafiają do paska menu.
+    private func updateMouse() {
+        let inside = panel.isVisible && hitRect.contains(NSEvent.mouseLocation)
+        if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
+        if inside != mouseInside { hover(inside) }
     }
 }

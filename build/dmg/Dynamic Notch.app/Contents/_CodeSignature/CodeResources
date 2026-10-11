@@ -3,7 +3,26 @@
 <plist version="1.0">
 <dict>
 	<key>files</key>
-	<dict/>
+	<dict>
+		<key>Resources/en.lproj/InfoPlist.strings</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			R0SuV5OwlGo99iBIP3ioygWFxEI=
+			</data>
+			<key>optional</key>
+			<true/>
+		</dict>
+		<key>Resources/pl.lproj/InfoPlist.strings</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			O1n5RVPbzL/fcRdUGwsAqTp9UWM=
+			</data>
+			<key>optional</key>
+			<true/>
+		</dict>
+	</dict>
 	<key>files2</key>
 	<dict>
 		<key>Library/LaunchAgents/pl.bulka.dynamicnotch.agent.plist</key>
@@ -12,6 +31,24 @@
 			<data>
 			Of1PuDoGLF/CwOR1xXWhfbL/wHuvoz3fCphulpcUUYc=
 			</data>
+		</dict>
+		<key>Resources/en.lproj/InfoPlist.strings</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			+dfuEanBgL2z5fJyH6Jp1l5sKjz4+Loqo7PDhqpz8HI=
+			</data>
+			<key>optional</key>
+			<true/>
+		</dict>
+		<key>Resources/pl.lproj/InfoPlist.strings</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			kZ0nTg4tK2m6dYsn9ssVeSKLAdWj9d3v0ZpIP6cg94g=
+			</data>
+			<key>optional</key>
+			<true/>
 		</dict>
 	</dict>
 	<key>rules</key>

@@ -24,7 +24,7 @@ struct NowPlaying: Equatable {
         case spotify = "com.spotify.client"
 
         var appName: String { self == .music ? "Music" : "Spotify" }
-        var displayName: String { self == .music ? "Muzyka" : "Spotify" }
+        var displayName: String { self == .music ? tr("Muzyka", "Music") : "Spotify" }
     }
 
     /// Bieżąca pozycja wyliczona na żywo (bez ciągłego pytania odtwarzacza).

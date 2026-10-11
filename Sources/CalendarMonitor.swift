@@ -12,6 +12,8 @@ struct CalendarItem: Equatable, Identifiable {
     let color: NSColor
     /// Link do spotkania online (Zoom, Meet, Teams, FaceTime, Webex), jeśli jest.
     let meetingURL: URL?
+    /// Identyfikator do otwarcia właśnie tego wydarzenia w Kalendarzu
+    let itemID: String
 }
 
 struct ReminderItem: Equatable, Identifiable {
@@ -78,11 +80,12 @@ final class CalendarMonitor {
             .prefix(20)
             .map { event in
                 CalendarItem(id: event.eventIdentifier ?? UUID().uuidString,
-                             title: event.title ?? "Wydarzenie",
+                             title: event.title ?? tr("Wydarzenie", "Event"),
                              start: event.startDate,
                              end: event.endDate,
                              color: event.calendar?.color ?? .systemRed,
-                             meetingURL: Self.meetingURL(in: event))
+                             meetingURL: Self.meetingURL(in: event),
+                             itemID: event.calendarItemIdentifier)
             }
         onEvents?(Array(items))
     }
@@ -142,7 +145,7 @@ final class CalendarMonitor {
                     let id = reminder.calendarItemIdentifier
                     self.reminderCache[id] = reminder
                     let due = reminder.dueDateComponents?.date
-                    return ReminderItem(id: id, title: reminder.title ?? "Przypomnienie", due: due,
+                    return ReminderItem(id: id, title: reminder.title ?? tr("Przypomnienie", "Reminder"), due: due,
                                         overdue: (due ?? now) < Calendar.current.startOfDay(for: now))
                 }
                 self.onReminders?(items)

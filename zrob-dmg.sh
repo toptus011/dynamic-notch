@@ -28,12 +28,14 @@ mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 swiftc -O -swift-version 5 \
     -target arm64-apple-macos13.0 \
     -framework Cocoa -framework SwiftUI -framework Combine \
-    -framework CoreAudio -framework CoreMediaIO -framework IOBluetooth -framework IOKit -framework EventKit \
+    -framework CoreAudio -framework CoreMediaIO -framework IOBluetooth -framework IOKit -framework EventKit -framework UniformTypeIdentifiers -framework UserNotifications \
     -framework Carbon -framework ServiceManagement -framework ApplicationServices \
     -o "$BUNDLE/Contents/MacOS/$EXE" \
     Sources/*.swift
 
 cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
+# Opisy zgód po angielsku (gdy system nie jest po polsku)
+cp -R Resources/en.lproj Resources/pl.lproj "$BUNDLE/Contents/Resources/"
 # Opis agenta w tle (start przy logowaniu + restart po awarii)
 mkdir -p "$BUNDLE/Contents/Library/LaunchAgents"
 cp Resources/pl.bulka.dynamicnotch.agent.plist "$BUNDLE/Contents/Library/LaunchAgents/"
